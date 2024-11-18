@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Interactive Map with Custom Location Names</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <style>
+        #map {
+            height: 500px;
+            width: 100%;
+        }
+        .controls {
+            margin-top: 20px;
+        }
+        .location-list {
+            max-width: 300px;
+        }
+        .location-item {
+            cursor: pointer;
+            padding: 5px;
+            border-bottom: 1px solid #ccc;
+        }
+        .location-item:hover {
+            background-color: #f0f0f0;
+        }
+        input, button {
+            margin: 5px 0;
+            padding: 5px;
+            width: 100%;
+        }
+    </style>
+</head>
+<body>
+
+    <h2>Interactive Map with Custom Location Names</h2>
+    <div id="map"></div>
+
+    <div class="controls">
+        <h3>Search and Manage Locations</h3>
+        <input type="text" id="locationSearch" placeholder="Search for a location (e.g., AA BBQ & Grill)" />
+        <button id="searchLocation">Search Location</button>
+        <input type="text" id="customName" placeholder="Enter a custom name for the location (e.g., Project 1)" />
+        <button id="addToList">Add to List</button>
+        <button id="clearForm">Clear Form</button>
+    </div>
+
+    <div id="locationList" class="location-list"></div>
+
+    <script>
+        const map = L.map('map').setView([20, 0], 2);
+
+        // Add OpenStreetMap tile layer
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            maxZoom: 18,
+            attribution: '© OpenStreetMap contributors'
+        }).addTo(map);
+
+        let locations = JSON.parse(localStorage.getItem('locations')) || [];
+        const markers = new Map();
+        let currentSearchResult = null;
+
+        // Save locations to local storage
+        function saveToLocalStorage() {
+            localStorage.setItem('locations', JSON.stringify(locations));
+        }
+
+        // Add marker to the map
+        function addMarker(location) {
+            if (markers.has(location.customName)) {
+                markers.get(location.customName).remove();
+            }
+
+            const marker = L.marker(location.coordinates)
+                .addTo(map)
+                .bindPopup(`<b>${location.customName}</b><br>${location.address}`);
+            
+            markers.set(location.customName, marker);
+        }
+
+        // Update the location list UI
+        function updateLocationList() {
+            const locationList = document.getElementById('locationList');
+            locationList.innerHTML = '<h3>Locations</h3>';
+
+            locations.forEach((location, index) => {
+                const listItem = document.createElement('div');
+                listItem.className = 'location-item';
+                listItem.textContent = `${location.customName} (${location.address})`;
+                
+                listItem.onclick = () => {
+                    map.setView(location.coordinates, 15);
+                };
+
+                const deleteButton = document.createElement('button');
+                deleteButton.textContent = 'Delete';
+                deleteButton.style.marginLeft = '10px';
+                deleteButton.onclick = (e) => {
+                    e.stopPropagation();
+                    deleteLocation(index);
+                };
+
+                listItem.appendChild(deleteButton);
+                locationList.appendChild(listItem);
+            });
+        }
+
+        // Search for a location using OpenStreetMap Nominatim API
+        function searchLocation() {
+            const query = document.getElementById('locationSearch').value.trim();
+
+            if (!query) {
+                alert('Please enter a location name.');
+                return;
+            }
+
+            const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}`;
+
+            fetch(url)
+                .then(response => response.json())
+                .then(data => {
+                    if (data.length > 0) {
+                        const place = data[0];
+                        const address = place.display_name;
+                        const coordinates = [parseFloat(place.lat), parseFloat(place.lon)];
+
+                        // Store the search result temporarily
+                        currentSearchResult = { address, coordinates };
+                        map.setView(coordinates, 15);
+                        alert(`Found location: ${address}`);
+                    } else {
+                        alert('Location not found.');
+                        currentSearchResult = null;
+                    }
+                })
+                .catch(error => {
+                    console.error('Error searching for location:', error);
+                    alert('Failed to search for location.');
+                    currentSearchResult = null;
+                });
+        }
+
+        // Add the current search result to the list with a custom name
+        function addToList() {
+            if (!currentSearchResult) {
+                alert('Please search for a location first.');
+                return;
+            }
+
+            const customName = document.getElementById('customName').value.trim();
+            if (!customName) {
+                alert('Please enter a custom name for the location.');
+                return;
+            }
+
+            const locationData = {
+                customName,
+                address: currentSearchResult.address,
+                coordinates: currentSearchResult.coordinates
+            };
+
+            const existingIndex = locations.findIndex(loc => loc.customName === customName);
+
+            if (existingIndex > -1) {
+                locations[existingIndex] = locationData;
+                alert(`Location "${customName}" updated successfully.`);
+            } else {
+                locations.push(locationData);
+                alert(`Location "${customName}" added to the list.`);
+            }
+
+            addMarker(locationData);
+            saveToLocalStorage();
+            updateLocationList();
+            currentSearchResult = null;
+            document.getElementById('customName').value = '';
+        }
+
+        // Delete a location from the list
+        function deleteLocation(index) {
+            const location = locations[index];
+            if (markers.has(location.customName)) {
+                markers.get(location.customName).remove();
+                markers.delete(location.customName);
+            }
+
+            locations.splice(index, 1);
+            saveToLocalStorage();
+            updateLocationList();
+            alert(`Location "${location.customName}" deleted successfully.`);
+        }
+
+        document.getElementById('searchLocation').onclick = searchLocation;
+        document.getElementById('addToList').onclick = addToList;
+        document.getElementById('clearForm').onclick = () => {
+            document.getElementById('locationSearch').value = '';
+            document.getElementById('customName').value = '';
+            currentSearchResult = null;
+        };
+
+        // Load initial data
+        locations.forEach(location => addMarker(location));
+        updateLocationList();
+    </script>
+
+</body>
+</html>
